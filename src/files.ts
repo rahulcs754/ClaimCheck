@@ -6,7 +6,7 @@ const DOC = /\.(md|mdx|rst|adoc|txt)$|(^|\/)docs?\//i;
 const CODE = /\.([cm]?[jt]sx?|vue|svelte|py|go|rb|java|kt|cs|php|rs|swift)$/i;
 
 export const isTest = (p: string) => TEST.test(p);
-export const isDoc = (p: string) => DOC.test(p) && !isTest(p);
+export const isDoc = (p: string) => DOC.test(p) && !isTest(p) && !CODE.test(p);
 /** Source code that ships: code files that are not tests. */
 export const isSource = (p: string) => CODE.test(p) && !isTest(p);
 

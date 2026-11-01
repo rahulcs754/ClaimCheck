@@ -14,6 +14,7 @@ describe('tests rule', () => {
   });
   it('flags new skipped tests as unclear', () => {
     expect(verdict('tests', [file('src/a.test.ts', ['it.skip("x", () => {})'])])).toBe('unclear');
+    expect(verdict('tests', [file('src/a.test.ts', ["  expect(f('it.skip(x)')).toBe(1)"])])).toBe('supported');
   });
 });
 
@@ -56,6 +57,7 @@ describe('docs and changelog rules', () => {
   it('accepts markdown, docs folder or doc comments', () => {
     expect(verdict('docs', [file('src/a.ts', ['x'])])).toBe('unsupported');
     expect(verdict('docs', [file('README.md', ['new'])])).toBe('supported');
+    expect(verdict('docs', [file('docs/bundle.js', ['x'])])).toBe('unsupported');
     expect(verdict('docs', [file('src/a.ts', ['/**', ' * @param x the value'])])).toBe('supported');
   });
   it('needs a changelog file', () => {

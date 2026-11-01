@@ -25,7 +25,7 @@ const tests: Rule = {
       const src = files.filter((f) => isSource(f.path)).map((f) => f.path);
       return bad(`No test file has new lines.${src.length ? ` Code changed in ${list(src)}.` : ''}`);
     }
-    const skips = findAdded(files, /\b(it|test|describe)\.(skip|only|todo)\(|\bx(it|describe)\(/, isTest);
+    const skips = findAdded(files, /^\s*(it|test|describe)\.(skip|only|todo)\(|^\s*x(it|describe)\(/, isTest);
     if (skips.length) return unclear(`Test files changed, but new skipped or focused tests at ${list(skips)}.`);
     return ok(`${changed.length} test file${changed.length > 1 ? 's' : ''} changed: ${list(changed.map((f) => f.path))}.`);
   },

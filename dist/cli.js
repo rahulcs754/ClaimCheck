@@ -8,7 +8,7 @@ var TEST = /(^|\/)(__tests__|__test__|tests?|specs?|e2e|cypress|playwright)\/|\.
 var DOC = /\.(md|mdx|rst|adoc|txt)$|(^|\/)docs?\//i;
 var CODE = /\.([cm]?[jt]sx?|vue|svelte|py|go|rb|java|kt|cs|php|rs|swift)$/i;
 var isTest = (p) => TEST.test(p);
-var isDoc = (p) => DOC.test(p) && !isTest(p);
+var isDoc = (p) => DOC.test(p) && !isTest(p) && !CODE.test(p);
 var isSource = (p) => CODE.test(p) && !isTest(p);
 var isCommentLine = (t) => /^\s*(\/\/|\/\*|\*|#(?!!)|<!--)/.test(t);
 function list(paths, max = 3) {
@@ -44,7 +44,7 @@ var tests = {
       const src = files.filter((f) => isSource(f.path)).map((f) => f.path);
       return bad(`No test file has new lines.${src.length ? ` Code changed in ${list(src)}.` : ""}`);
     }
-    const skips = findAdded(files, /\b(it|test|describe)\.(skip|only|todo)\(|\bx(it|describe)\(/, isTest);
+    const skips = findAdded(files, /^\s*(it|test|describe)\.(skip|only|todo)\(|^\s*x(it|describe)\(/, isTest);
     if (skips.length) return unclear(`Test files changed, but new skipped or focused tests at ${list(skips)}.`);
     return ok(`${changed.length} test file${changed.length > 1 ? "s" : ""} changed: ${list(changed.map((f) => f.path))}.`);
   }
