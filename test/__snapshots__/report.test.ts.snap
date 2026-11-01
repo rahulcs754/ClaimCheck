@@ -1,0 +1,19 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`demo PR > renders a stable comment 1`] = `
+"<!-- claimcheck -->
+### ❌ ClaimCheck: 5 of 6 claims in the PR description don't match the diff
+
+| | Claim | PR says | What the diff shows |
+|---|---|---|---|
+| ❌ | Tests added | "Added unit tests for the retry logic" | No test file has new lines. Code changed in \`src/payments/client.ts\`, \`src/payments/gateway.ts\`. |
+| ❌ | No breaking changes | "No breaking changes, fully backward compatible" | Removed export \`refundLegacy\` in \`src/payments/client.ts\`. Signature changed for \`charge\` in \`src/payments/client.ts\`. |
+| ❌ | Errors handled | "Handled errors from the gateway with proper error handling" | No new try/catch, .catch(), throw or error check in the changed code. |
+| ❌ | No new dependencies | "No new dependencies" | New dependency: \`p-retry\` (package.json). |
+| ❌ | No debug logs | "Removed leftover console.log statements" | New console.log or debugger at \`src/payments/client.ts:10\`. |
+| ✅ | Docs updated | "Updated the README with the new config" | Docs changed: \`README.md\`. |
+
+Fix the code or edit the description so a reviewer can trust it.
+
+<sub>1 supported · 5 not supported · 0 unclear · [ClaimCheck](https://github.com/rahulcs754/claimcheck)</sub>"
+`;

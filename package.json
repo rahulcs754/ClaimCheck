@@ -1,0 +1,23 @@
+{
+  "name": "claimcheck",
+  "version": "0.1.0",
+  "description": "Check the claims in a PR description against the real diff.",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "claimcheck": "dist/cli.js" },
+  "files": ["dist"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

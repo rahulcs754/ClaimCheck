@@ -1,0 +1,50 @@
+name: ClaimCheck
+description: Check the claims in a PR description ("added tests", "no breaking changes") against the real diff.
+author: rahulcs754
+branding:
+  icon: check-square
+  color: blue
+
+inputs:
+  base:
+    description: Git ref to compare against. Default is origin/<PR base branch>.
+    required: false
+  comment:
+    description: Post or update one PR comment with the report.
+    required: false
+    default: 'true'
+  comment-on:
+    description: When to post a new comment. "mismatch" (only when a claim fails) or "always".
+    required: false
+    default: mismatch
+  fail-on-mismatch:
+    description: Fail the check when a claim is not supported by the diff.
+    required: false
+    default: 'false'
+  working-directory:
+    description: Folder to run in.
+    required: false
+    default: '.'
+  github-token:
+    description: Token used to read the PR and post the comment.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Run ClaimCheck
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        CC_BASE: ${{ inputs.base }}
+        CC_COMMENT: ${{ inputs.comment }}
+        CC_COMMENT_ON: ${{ inputs.comment-on }}
+        CC_FAIL: ${{ inputs.fail-on-mismatch }}
+      run: |
+        args=()
+        [ -n "$CC_BASE" ] && args+=(--base "$CC_BASE")
+        [ "$CC_COMMENT" = "true" ] && args+=(--comment --comment-on "$CC_COMMENT_ON")
+        [ "$CC_FAIL" = "true" ] && args+=(--fail-on-mismatch)
+        node "$GITHUB_ACTION_PATH/dist/cli.js" "${args[@]}"
