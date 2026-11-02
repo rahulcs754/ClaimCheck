@@ -54,6 +54,8 @@ describe('findClaims', () => {
   it('ignores quoted examples and code', () => {
     expect(rules('It finds claims like "added tests" and "no breaking changes".')).toEqual([]);
     expect(rules('Renamed the `addTests` helper.')).toEqual([]);
+    expect(rules('Rules: tests, no-breaking, error-handling.')).toEqual([]);
+    expect(rules('This is a non-breaking change.')).toEqual(['no-breaking']);
     expect(rules('Added tests for the "parser" module.')).toEqual(['tests']);
   });
 

@@ -58,7 +58,8 @@ const noBreaking: Rule = {
   label: 'No breaking changes',
   negatable: false,
   claim: [
-    /\b(no|zero|non|without( any)?)[- ]breaking\b/i,
+    /\b(no|zero|without( any)?) breaking\b/i,
+    /\bnon-?breaking\b/i,
     /\bbackwards?[- ]compatib(le|ility)\b/i,
     /\bnot (a )?breaking\b/i,
     /\b(doesn't|does not|won't|will not) break (anything|existing|the api|callers|consumers)\b/i,
