@@ -21,6 +21,14 @@ inputs:
     description: Fail the check when a claim is not supported by the diff.
     required: false
     default: 'false'
+  receipt:
+    description: "Add a verification receipt to the PR comment (which CI tests and steps ran, what was not verified). Needs actions: read and checks: read."
+    required: false
+    default: 'true'
+  wait-for-ci:
+    description: Minutes to wait for other CI jobs to finish before writing the receipt. 0 = report what has finished so far.
+    required: false
+    default: '15'
   working-directory:
     description: Folder to run in.
     required: false
@@ -42,9 +50,12 @@ runs:
         CC_COMMENT: ${{ inputs.comment }}
         CC_COMMENT_ON: ${{ inputs.comment-on }}
         CC_FAIL: ${{ inputs.fail-on-mismatch }}
+        CC_RECEIPT: ${{ inputs.receipt }}
+        CC_WAIT: ${{ inputs.wait-for-ci }}
       run: |
         args=()
         [ -n "$CC_BASE" ] && args+=(--base "$CC_BASE")
         [ "$CC_COMMENT" = "true" ] && args+=(--comment --comment-on "$CC_COMMENT_ON")
         [ "$CC_FAIL" = "true" ] && args+=(--fail-on-mismatch)
+        [ "$CC_RECEIPT" = "true" ] && args+=(--receipt --wait "$CC_WAIT")
         node "$GITHUB_ACTION_PATH/dist/cli.js" "${args[@]}"
