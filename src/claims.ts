@@ -29,7 +29,11 @@ export function sentences(body: string): string[] {
   return out;
 }
 
-function matches(rule: Rule, sentence: string): boolean {
+/** Quoted text is an example or a name ("claims like \"added tests\""), not a claim. */
+const QUOTED = /"[^"\n]*"|\u201c[^\u201d\n]*\u201d|`[^`\n]*`/g;
+
+function matches(rule: Rule, raw: string): boolean {
+  const sentence = raw.replace(QUOTED, '""');
   for (const re of rule.claim) {
     const m = re.exec(sentence);
     if (!m) continue;

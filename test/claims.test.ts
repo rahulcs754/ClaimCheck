@@ -51,6 +51,12 @@ describe('findClaims', () => {
     expect(rules('One-line fix for the null check')).toEqual(['small-change']);
   });
 
+  it('ignores quoted examples and code', () => {
+    expect(rules('It finds claims like "added tests" and "no breaking changes".')).toEqual([]);
+    expect(rules('Renamed the `addTests` helper.')).toEqual([]);
+    expect(rules('Added tests for the "parser" module.')).toEqual(['tests']);
+  });
+
   it('returns one claim per rule', () => {
     const c = findClaims('Added tests for a.\nAdded tests for b.');
     expect(c).toEqual([{ rule: 'tests', text: 'Added tests for a.' }]);

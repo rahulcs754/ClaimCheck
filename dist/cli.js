@@ -286,7 +286,9 @@ function sentences(body) {
   }
   return out;
 }
-function matches(rule, sentence) {
+var QUOTED = /"[^"\n]*"|\u201c[^\u201d\n]*\u201d|`[^`\n]*`/g;
+function matches(rule, raw) {
+  const sentence = raw.replace(QUOTED, '""');
   for (const re of rule.claim) {
     const m = re.exec(sentence);
     if (!m) continue;
