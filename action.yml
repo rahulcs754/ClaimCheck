@@ -22,7 +22,7 @@ inputs:
     required: false
     default: 'false'
   receipt:
-    description: Add a verification receipt to the PR comment (which CI tests and steps ran, what was not verified). Needs `actions: read` and `checks: read`.
+    description: "Add a verification receipt to the PR comment (which CI tests and steps ran, what was not verified). Needs actions: read and checks: read."
     required: false
     default: 'true'
   wait-for-ci:
@@ -44,7 +44,7 @@ runs:
     - name: Run ClaimCheck
       shell: bash
       receipt:
-    description: Add a verification receipt to the PR comment (which CI tests and steps ran, what was not verified). Needs `actions: read` and `checks: read`.
+    description: "Add a verification receipt to the PR comment (which CI tests and steps ran, what was not verified). Needs actions: read and checks: read."
     required: false
     default: 'true'
   wait-for-ci:
