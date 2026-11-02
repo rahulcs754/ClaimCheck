@@ -2,8 +2,9 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { checkClaims } from './check.js';
 import { parseDiff } from './diff.js';
 import { gitDiff } from './git.js';
-import { fetchBody, prContext, upsertComment } from './github.js';
+import { fetchBody, fetchReceipt, prContext, upsertComment } from './github.js';
 import { renderMarkdown, summary } from './markdown.js';
+import { renderReceipt, summarizeReceipt, type ReceiptSummary } from './receipt.js';
 
 const HELP = `claimcheck - check the claims in a PR description against the diff
 
@@ -19,6 +20,9 @@ Options:
   --comment              Post the report as a PR comment (GitHub Actions)
   --comment-on <when>    mismatch (default) | always
   --fail-on-mismatch     Exit 1 when a claim is not supported
+  --receipt              Add a verification receipt: which CI tests and steps ran
+                         for the PR head commit, and what was not verified (GitHub Actions)
+  --wait <minutes>       With --receipt, wait up to this long for other CI jobs to finish (default 0)
   -h, --help             Show this help
 
 In GitHub Actions the PR description and base branch are read automatically.`;
@@ -32,10 +36,12 @@ interface Opts {
   comment: boolean;
   commentOn: 'mismatch' | 'always';
   failOnMismatch: boolean;
+  receipt: boolean;
+  wait: number;
 }
 
 export function parseArgs(argv: string[]): Opts {
-  const o: Opts = { json: false, comment: false, commentOn: 'mismatch', failOnMismatch: false };
+  const o: Opts = { json: false, comment: false, commentOn: 'mismatch', failOnMismatch: false, receipt: false, wait: 0 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => {
@@ -54,6 +60,12 @@ export function parseArgs(argv: string[]): Opts {
       if (v !== 'mismatch' && v !== 'always') throw new Error('--comment-on must be mismatch or always');
       o.commentOn = v;
     } else if (a === '--fail-on-mismatch') o.failOnMismatch = true;
+    else if (a === '--receipt') o.receipt = true;
+    else if (a === '--wait') {
+      const v = Number(next());
+      if (!Number.isFinite(v) || v < 0) throw new Error('--wait must be a number of minutes');
+      o.wait = v;
+    }
     else if (a === '-h' || a === '--help') {
       console.log(HELP);
       process.exit(0);
@@ -74,11 +86,21 @@ async function main(): Promise<number> {
 
   const base = o.base || (pr?.baseRef ? `origin/${pr.baseRef}` : 'origin/main');
   const diff = o.diffFile ? readFileSync(o.diffFile, 'utf8') : gitDiff(base);
-  const results = checkClaims(body, parseDiff(diff));
-  const md = renderMarkdown(results);
+  const files = parseDiff(diff);
+  const results = checkClaims(body, files);
   const s = summary(results);
 
-  if (o.json) console.log(JSON.stringify({ results, summary: s }, null, 2));
+  let receipt: ReceiptSummary | undefined;
+  if (o.receipt) {
+    if (!pr?.headSha || !token) console.error('claimcheck: --receipt needs a pull_request event and GITHUB_TOKEN; skipping receipt.');
+    else {
+      const raw = await fetchReceipt(token, pr, pr.headSha, { waitMinutes: o.wait, selfRunId: process.env.GITHUB_RUN_ID });
+      receipt = summarizeReceipt(raw, files, results);
+    }
+  }
+  const md = receipt ? `${renderMarkdown(results)}\n\n${renderReceipt(receipt)}` : renderMarkdown(results);
+
+  if (o.json) console.log(JSON.stringify({ results, summary: s, receipt }, null, 2));
   else console.log(md);
 
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${md}\n`);
@@ -86,7 +108,8 @@ async function main(): Promise<number> {
   if (o.comment) {
     if (!pr || !token) console.error('claimcheck: --comment needs a pull_request event and GITHUB_TOKEN; skipping comment.');
     else {
-      const needs = s.bad + s.unclear > 0 || o.commentOn === 'always';
+      // A receipt is meant to sit on every PR, so it always gets a comment.
+      const needs = s.bad + s.unclear > 0 || o.commentOn === 'always' || receipt !== undefined;
       // When everything matches we still update an old comment, so a fixed PR clears its warning.
       const r = await upsertComment(token, pr, md, needs);
       if (r !== 'skipped') console.error(`claimcheck: PR comment ${r}.`);

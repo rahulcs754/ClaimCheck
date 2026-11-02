@@ -431,6 +431,7 @@ function prContext(env = process.env) {
     number: pr.number,
     body: pr.body ?? "",
     baseRef: pr.base?.ref ?? env.GITHUB_BASE_REF,
+    headSha: pr.head?.sha,
     apiUrl: env.GITHUB_API_URL ?? "https://api.github.com"
   };
 }
@@ -468,6 +469,144 @@ async function upsertComment(token, pr, body, create = true) {
   await gh(token, `${base}/issues/${pr.number}/comments`, { method: "POST", body: JSON.stringify({ body }) });
   return "created";
 }
+async function fetchCiJobs(token, pr, sha, selfRunId) {
+  const base = `${pr.apiUrl}/repos/${pr.owner}/${pr.repo}`;
+  const jobs = [];
+  const runsRes = await gh(token, `${base}/actions/runs?head_sha=${sha}&per_page=100`);
+  const runs = (await runsRes.json()).workflow_runs ?? [];
+  for (const run of runs) {
+    const res = await gh(token, `${base}/actions/runs/${run.id}/jobs?per_page=100`);
+    const list2 = (await res.json()).jobs ?? [];
+    for (const j of list2) {
+      if (String(run.id) === selfRunId && j.status !== "completed") continue;
+      jobs.push({
+        name: run.name ? `${run.name} / ${j.name}` : j.name,
+        status: j.status,
+        conclusion: j.conclusion,
+        url: j.html_url,
+        steps: (j.steps ?? []).map((s) => ({ name: s.name, status: s.status, conclusion: s.conclusion }))
+      });
+    }
+  }
+  const checksRes = await gh(token, `${base}/commits/${sha}/check-runs?per_page=100`);
+  const checks = (await checksRes.json()).check_runs ?? [];
+  for (const c of checks) {
+    if (c.app?.slug === "github-actions") continue;
+    jobs.push({ name: c.name, status: c.status, conclusion: c.conclusion, url: c.html_url, steps: [] });
+  }
+  return jobs;
+}
+async function fetchReceipt(token, pr, sha, opts = {}) {
+  const deadline = Date.now() + (opts.waitMinutes ?? 0) * 6e4;
+  const poll = (opts.pollSeconds ?? 20) * 1e3;
+  try {
+    for (; ; ) {
+      const jobs = await fetchCiJobs(token, pr, sha, opts.selfRunId);
+      const pending = jobs.some((j) => j.status !== "completed");
+      if (!pending || Date.now() + poll > deadline) return { sha, jobs };
+      await new Promise((r) => setTimeout(r, poll));
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const hint = /: 40[34]$/.test(msg) ? " (give the workflow `actions: read` and `checks: read`)" : "";
+    return { sha, jobs: [], error: `${msg}${hint}` };
+  }
+}
+
+// src/receipt.ts
+var KINDS = [
+  ["typecheck", /\b(typecheck|type-check|types|tsc|mypy|pyright|flow)\b/i],
+  ["lint", /\b(lint|eslint|biome|ruff|flake8|pylint|golangci|stylelint|clippy|format:check|prettier --check)\b/i],
+  ["test", /\b(tests?|vitest|jest|pytest|mocha|ava|playwright|cypress|e2e|specs?|unittest|go test|cargo test|rspec|phpunit|coverage)\b/i],
+  ["build", /\b(build|compile|bundle|tsup|webpack|rollup|next build|vite build)\b/i]
+];
+var BORING = /^(set up job|complete job|post |run actions\/|checkout|set ?up |install|run (npm (ci|install)|pnpm install|yarn( install)?|pip install|bun install))/i;
+function stepKind(name) {
+  if (BORING.test(name)) return void 0;
+  for (const [kind, re] of KINDS) if (re.test(name)) return kind;
+  return void 0;
+}
+function result(status, conclusion) {
+  if (status !== "completed") return "running";
+  if (conclusion === "success" || conclusion === "neutral") return "passed";
+  if (conclusion === "skipped" || conclusion === "cancelled") return "skipped";
+  return "failed";
+}
+var LABEL = { test: "Tests", typecheck: "Type check", lint: "Lint", build: "Build" };
+function summarizeReceipt(receipt, files = [], results = []) {
+  const ran = [];
+  const jobs = { passed: 0, failed: 0, running: 0, skipped: 0 };
+  const failed = [];
+  const running = [];
+  const skipped = [];
+  for (const job of receipt.jobs) {
+    const r = result(job.status, job.conclusion);
+    jobs[r === "passed" ? "passed" : r === "failed" ? "failed" : r === "running" ? "running" : "skipped"]++;
+    if (r === "running") running.push(job.name);
+    if (r === "skipped") skipped.push(job.name);
+    let found = false;
+    for (const s of job.steps) {
+      const kind = stepKind(s.name);
+      if (!kind) continue;
+      found = true;
+      ran.push({ kind, job: job.name, step: s.name, result: result(s.status, s.conclusion) });
+    }
+    const jobKind = stepKind(job.name.split(" / ").pop() ?? job.name);
+    if (!found && jobKind) ran.push({ kind: jobKind, job: job.name, result: r });
+    if (r === "failed") {
+      const bad2 = job.steps.find((s) => result(s.status, s.conclusion) === "failed");
+      failed.push(bad2 ? `${job.name} (step "${bad2.name}")` : job.name);
+    }
+  }
+  const notVerified = [];
+  if (receipt.error) notVerified.push(`CI results could not be read: ${receipt.error}`);
+  else if (receipt.jobs.length === 0) notVerified.push("No CI jobs ran for this commit.");
+  if (failed.length) notVerified.push(`Failed: ${failed.slice(0, 5).join(", ")}${failed.length > 5 ? ` and ${failed.length - 5} more` : ""}.`);
+  if (running.length) notVerified.push(`Still running when ClaimCheck finished: ${running.slice(0, 5).join(", ")}.`);
+  if (skipped.length) notVerified.push(`Skipped or cancelled: ${skipped.slice(0, 5).join(", ")}.`);
+  if (!receipt.error && receipt.jobs.length) {
+    const tests2 = ran.filter((s) => s.kind === "test");
+    const passedTests = tests2.filter((s) => s.result === "passed");
+    if (tests2.length === 0) notVerified.push("No CI step ran tests.");
+    else if (passedTests.length === 0) notVerified.push("Tests ran, but none passed.");
+    const testsClaimed = results.some((r) => r.rule === "tests" && r.verdict === "supported");
+    if (testsClaimed && passedTests.length === 0) notVerified.push("The PR adds tests, but no passing CI step ran them.");
+    const code2 = files.filter((f) => f.status !== "deleted" && isSource(f.path)).map((f) => f.path);
+    if (code2.length && !ran.some((s) => (s.kind === "typecheck" || s.kind === "lint") && s.result === "passed"))
+      notVerified.push("No type check or lint step passed.");
+  }
+  const code = files.filter((f) => f.status !== "deleted" && isSource(f.path)).map((f) => f.path);
+  const testFiles = files.filter((f) => f.status !== "deleted" && isTest(f.path));
+  if (code.length && testFiles.length === 0) notVerified.push(`Changed code has no test changes: ${list(code)}.`);
+  for (const r of results.filter((x) => x.verdict === "unclear")) notVerified.push(`Needs a human look: ${r.label}.`);
+  for (const r of results.filter((x) => x.verdict === "unsupported")) notVerified.push(`Claim not backed by the diff: ${r.label}.`);
+  return { sha: receipt.sha, ran, jobs, notVerified };
+}
+var ICON2 = { passed: "\u2705 passed", failed: "\u274C failed", skipped: "\u23ED\uFE0F skipped", running: "\u23F3 running" };
+function cell2(s) {
+  return s.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+function renderReceipt(s) {
+  const lines = [`#### \u{1F9FE} Verification receipt for \`${s.sha.slice(0, 7)}\``, ""];
+  if (s.ran.length) {
+    const order = ["test", "typecheck", "lint", "build"];
+    const sorted = [...s.ran].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+    lines.push("| Check | Where | Result |", "|---|---|---|");
+    for (const r of sorted.slice(0, 20)) lines.push(`| ${LABEL[r.kind]} | ${cell2(r.job)}${r.step ? ` \u2192 \`${cell2(r.step)}\`` : ""} | ${ICON2[r.result]} |`);
+    if (sorted.length > 20) lines.push(`| | and ${sorted.length - 20} more | |`);
+    lines.push("");
+  } else {
+    lines.push("No test, type check, lint or build step found in CI.", "");
+  }
+  const { passed, failed, running, skipped } = s.jobs;
+  lines.push(`CI jobs: ${passed} passed \xB7 ${failed} failed \xB7 ${running} running \xB7 ${skipped} skipped`, "");
+  if (s.notVerified.length) {
+    lines.push("**Not verified**", ...s.notVerified.map((n) => `- ${n}`));
+  } else {
+    lines.push("**Not verified:** nothing found. CI ran tests and checks, and every claim matches the diff.");
+  }
+  return lines.join("\n");
+}
 
 // src/cli.ts
 var HELP = `claimcheck - check the claims in a PR description against the diff
@@ -484,11 +623,14 @@ Options:
   --comment              Post the report as a PR comment (GitHub Actions)
   --comment-on <when>    mismatch (default) | always
   --fail-on-mismatch     Exit 1 when a claim is not supported
+  --receipt              Add a verification receipt: which CI tests and steps ran
+                         for the PR head commit, and what was not verified (GitHub Actions)
+  --wait <minutes>       With --receipt, wait up to this long for other CI jobs to finish (default 0)
   -h, --help             Show this help
 
 In GitHub Actions the PR description and base branch are read automatically.`;
 function parseArgs(argv) {
-  const o = { json: false, comment: false, commentOn: "mismatch", failOnMismatch: false };
+  const o = { json: false, comment: false, commentOn: "mismatch", failOnMismatch: false, receipt: false, wait: 0 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => {
@@ -507,7 +649,12 @@ function parseArgs(argv) {
       if (v !== "mismatch" && v !== "always") throw new Error("--comment-on must be mismatch or always");
       o.commentOn = v;
     } else if (a === "--fail-on-mismatch") o.failOnMismatch = true;
-    else if (a === "-h" || a === "--help") {
+    else if (a === "--receipt") o.receipt = true;
+    else if (a === "--wait") {
+      const v = Number(next());
+      if (!Number.isFinite(v) || v < 0) throw new Error("--wait must be a number of minutes");
+      o.wait = v;
+    } else if (a === "-h" || a === "--help") {
       console.log(HELP);
       process.exit(0);
     } else throw new Error(`Unknown option: ${a}`);
@@ -524,17 +671,28 @@ async function main() {
   if (body === void 0) throw new Error("No PR description. Use --body, --body-file, or run inside a pull_request workflow.");
   const base = o.base || (pr?.baseRef ? `origin/${pr.baseRef}` : "origin/main");
   const diff = o.diffFile ? readFileSync2(o.diffFile, "utf8") : gitDiff(base);
-  const results = checkClaims(body, parseDiff(diff));
-  const md = renderMarkdown(results);
+  const files = parseDiff(diff);
+  const results = checkClaims(body, files);
   const s = summary(results);
-  if (o.json) console.log(JSON.stringify({ results, summary: s }, null, 2));
+  let receipt;
+  if (o.receipt) {
+    if (!pr?.headSha || !token) console.error("claimcheck: --receipt needs a pull_request event and GITHUB_TOKEN; skipping receipt.");
+    else {
+      const raw = await fetchReceipt(token, pr, pr.headSha, { waitMinutes: o.wait, selfRunId: process.env.GITHUB_RUN_ID });
+      receipt = summarizeReceipt(raw, files, results);
+    }
+  }
+  const md = receipt ? `${renderMarkdown(results)}
+
+${renderReceipt(receipt)}` : renderMarkdown(results);
+  if (o.json) console.log(JSON.stringify({ results, summary: s, receipt }, null, 2));
   else console.log(md);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${md}
 `);
   if (o.comment) {
     if (!pr || !token) console.error("claimcheck: --comment needs a pull_request event and GITHUB_TOKEN; skipping comment.");
     else {
-      const needs = s.bad + s.unclear > 0 || o.commentOn === "always";
+      const needs = s.bad + s.unclear > 0 || o.commentOn === "always" || receipt !== void 0;
       const r = await upsertComment(token, pr, md, needs);
       if (r !== "skipped") console.error(`claimcheck: PR comment ${r}.`);
     }
