@@ -1,0 +1,15 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`summarizeReceipt > renders a stable receipt 1`] = `
+"#### 🧾 Verification receipt for \`abcdef1\`
+
+| Check | Where | Result |
+|---|---|---|
+| Tests | CI / test → \`Run npm test\` | ✅ passed |
+| Type check | CI / test → \`Run npm run typecheck\` | ✅ passed |
+| Build | CI / test → \`Run npm run build\` | ✅ passed |
+
+CI jobs: 1 passed · 0 failed · 0 running · 0 skipped
+
+**Not verified:** nothing found. CI ran tests and checks, and every claim matches the diff."
+`;

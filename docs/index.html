@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClaimCheck</title>
+<meta name="description" content="A GitHub Action that checks the claims in a PR description against the real diff.">
+<style>
+  :root {
+    --bg: #f7f9fb; --fg: #16202a; --muted: #5b6875; --card: #ffffff; --line: #dfe5ea;
+    --accent: #1f5fbf; --accent-soft: #e4ecf9; --bad: #b42318; --bad-soft: #fdecea; --ok: #1d7a4f; --ok-soft: #e6f4ec;
+    --warn: #a15c00; --warn-soft: #fcf1df; --code: #eef2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10161c; --fg: #e5ebf0; --muted: #9ba8b4; --card: #18212a; --line: #2a3541;
+      --accent: #7fb0ff; --accent-soft: #1b2b44; --bad: #ff8a80; --bad-soft: #3a1c1a; --ok: #6fd3a0; --ok-soft: #15301f;
+      --warn: #f3b562; --warn-soft: #33270f; --code: #222c36;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.1; margin: 0 0 12px; letter-spacing: -0.02em; }
+  h2 { font-size: 1.35rem; margin: 48px 0 12px; }
+  p.lead { font-size: 1.15rem; color: var(--muted); margin: 0 0 24px; max-width: 660px; }
+  a { color: var(--accent); }
+  .tag { display: inline-block; font-size: .8rem; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 10px; border-radius: 99px; margin-bottom: 16px; }
+  .btns { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; border: 1px solid var(--line); color: var(--fg); background: var(--card); cursor: pointer; font-size: 1rem; }
+  .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .card h3 { margin: 0 0 6px; font-size: 1rem; }
+  .card p { margin: 0; color: var(--muted); font-size: .95rem; }
+  code, pre, textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow-x: auto; margin: 8px 0 0; }
+  pre code { background: none; padding: 0; }
+  .try { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { .try { grid-template-columns: 1fr; } }
+  label { font-weight: 600; font-size: .9rem; display: block; margin-bottom: 4px; }
+  textarea { width: 100%; min-height: 260px; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; resize: vertical; }
+  .comment { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-top: 16px; }
+  .comment .head { padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+  .comment .body { padding: 16px; }
+  .comment h4 { margin: 0 0 8px; font-size: 1.1rem; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.v { width: 2rem; }
+  tr.unsupported { background: var(--bad-soft); }
+  tr.unclear { background: var(--warn-soft); }
+  @media (max-width: 600px) {
+    thead { display: none; }
+    tr { display: block; border-bottom: 1px solid var(--line); padding: 8px 0; }
+    td { display: block; border: 0; padding: 2px 10px; }
+    td.v { width: auto; }
+  }
+  .small { color: var(--muted); font-size: .85rem; margin-top: 8px; }
+  ol.steps { padding-left: 20px; }
+  ol.steps li { margin-bottom: 18px; }
+  footer { margin-top: 56px; color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <span class="tag">GitHub Action · CLI · Free and open source</span>
+  <h1>Does the PR do what it says?</h1>
+  <p class="lead">AI agents write confident PR summaries: "added tests", "no breaking changes", "handled errors". ClaimCheck checks each claim against the real diff and comments only on the ones that are not true.</p>
+  <div class="btns">
+    <a class="btn primary" href="https://github.com/rahulcs754/claimcheck#how-to-use-it">Add to your repo</a>
+    <a class="btn" href="#try">Try it here</a>
+    <a class="btn" href="https://github.com/rahulcs754/claimcheck">View on GitHub</a>
+  </div>
+
+  <h2>Why</h2>
+  <div class="grid">
+    <div class="card"><h3>Agents say "done" too early</h3><p>Developers report agents that claim tests or fixes they never wrote. Reviewers often trust the summary.</p></div>
+    <div class="card"><h3>Review is the bottleneck</h3><p>Knowing which claims are false tells a reviewer exactly where to look first.</p></div>
+    <div class="card"><h3>Quiet by default</h3><p>No comment when every claim matches. One comment per PR, updated on each push or edit.</p></div>
+    <div class="card"><h3>No AI, nothing leaves CI</h3><p>Plain rules over <code>git diff</code>. Fast, free and the same answer every time.</p></div>
+  </div>
+
+  <h2 id="try">Try it</h2>
+  <p>Paste a PR description and a unified diff (<code>git diff main...HEAD</code>). It runs in your browser; nothing is sent anywhere. The demo below is filled in already.</p>
+  <div class="try">
+    <div><label for="body">PR description</label><textarea id="body" spellcheck="false">## Summary
+Refactored the payment client to use the new gateway API.
+
+- Added unit tests for the retry logic
+- Handled errors from the gateway with proper error handling
+- No breaking changes, fully backward compatible
+- No new dependencies
+- Removed leftover console.log statements
+- Updated the README with the new config
+
+## Checklist
+- [x] Code builds
+- [ ] Added a database migration
+
+&lt;!-- Describe how you tested this PR --&gt;
+</textarea></div>
+    <div><label for="diff">Diff</label><textarea id="diff" spellcheck="false">diff --git a/README.md b/README.md
+index 1111111..2222222 100644
+--- a/README.md
++++ b/README.md
+@@ -10,0 +11,3 @@ ## Config
++### Gateway
++Set `GATEWAY_URL` to the new gateway endpoint.
++Retries default to 3.
+diff --git a/package.json b/package.json
+index 3333333..4444444 100644
+--- a/package.json
++++ b/package.json
+@@ -12,0 +13 @@
++    &quot;p-retry&quot;: &quot;^6.2.0&quot;,
+diff --git a/src/payments/client.ts b/src/payments/client.ts
+index 5555555..6666666 100644
+--- a/src/payments/client.ts
++++ b/src/payments/client.ts
+@@ -1,2 +1,3 @@
+-import { legacyPost } from &#x27;./legacy&#x27;;
++import pRetry from &#x27;p-retry&#x27;;
++import { gatewayPost } from &#x27;./gateway&#x27;;
+@@ -8,12 +9,10 @@
+-export function charge(amount: number, currency: string) {
+-  return legacyPost(&#x27;/charge&#x27;, { amount, currency });
+-}
+-
+-export function refundLegacy(id: string) {
+-  return legacyPost(&#x27;/refund&#x27;, { id });
+-}
++export function charge(amount: number, currency: string, idempotencyKey: string) {
++  console.log(&#x27;charging&#x27;, amount);
++  return pRetry(() =&gt; gatewayPost(&#x27;/charge&#x27;, { amount, currency, idempotencyKey }), { retries: 3 });
++}
+diff --git a/src/payments/gateway.ts b/src/payments/gateway.ts
+new file mode 100644
+index 0000000..7777777
+--- /dev/null
++++ b/src/payments/gateway.ts
+@@ -0,0 +1,6 @@
++export async function gatewayPost(path: string, body: unknown): Promise&lt;any&gt; {
++  const res = await fetch(process.env.GATEWAY_URL + path, { method: &#x27;POST&#x27;, body: JSON.stringify(body) });
++  return res.json();
++}
++
++// TODO: handle 429 from gateway
+</textarea></div>
+  </div>
+  <p><button class="btn primary" id="run">Check claims</button></p>
+  <div class="comment" aria-live="polite">
+    <div class="head">github-actions commented</div>
+    <div class="body" id="out">Loading…</div>
+  </div>
+
+  <h2>How to use it</h2>
+  <ol class="steps">
+    <li><strong>Add the workflow</strong> <code>.github/workflows/claimcheck.yml</code>:
+<pre><code>on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+permissions: { contents: read, pull-requests: write }
+jobs:
+  claimcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: rahulcs754/claimcheck@main</code></pre></li>
+    <li><strong>Open a PR.</strong> If a claim does not match the diff, ClaimCheck comments. Fix the code or the text and the comment turns ✅.</li>
+    <li><strong>Optional:</strong> set <code>fail-on-mismatch: true</code> to block the merge, or run <code>npx github:rahulcs754/claimcheck --body-file pr.md</code> from your agent before it opens the PR.</li>
+  </ol>
+
+  <h2>What it checks</h2>
+  <div class="grid">
+    <div class="card"><h3>Tests added</h3><p>A test file has new lines. New <code>.skip</code> or <code>.only</code> is flagged.</p></div>
+    <div class="card"><h3>No breaking changes</h3><p>No exported name removed. Changed function params are flagged.</p></div>
+    <div class="card"><h3>Errors handled</h3><p>New <code>try/catch</code>, <code>.catch()</code>, <code>throw</code> or error checks.</p></div>
+    <div class="card"><h3>Docs and changelog</h3><p>README, docs, doc comments, CHANGELOG or changesets changed.</p></div>
+    <div class="card"><h3>No new dependencies</h3><p>package.json, requirements.txt, go.mod and Cargo.toml.</p></div>
+    <div class="card"><h3>Code hygiene</h3><p>No new <code>any</code>, <code>@ts-ignore</code>, <code>console.log</code>, TODOs; migrations; "one-line fix" size.</p></div>
+  </div>
+
+  <footer>Built by <a href="https://github.com/rahulcs754">rahulcs754</a> · MIT license</footer>
+</main>
+<script src="claimcheck.js"></script>
+<script>
+  const ICON = { supported: '✅', unsupported: '❌', unclear: '⚠️' };
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const fmt = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+  function run() {
+    const out = document.getElementById('out');
+    try {
+      const files = ClaimCheck.parseDiff(document.getElementById('diff').value);
+      const results = ClaimCheck.checkClaims(document.getElementById('body').value, files);
+      const md = ClaimCheck.renderMarkdown(results);
+      const title = md.split('\n').find((l) => l.startsWith('### ')).slice(4);
+      if (!results.length) { out.innerHTML = '<h4>' + esc(title) + '</h4><p>Try a sentence like "Added tests" or "No breaking changes".</p>'; return; }
+      const order = { unsupported: 0, unclear: 1, supported: 2 };
+      const rows = [...results].sort((a, b) => order[a.verdict] - order[b.verdict]).map((r) =>
+        '<tr class="' + r.verdict + '"><td class="v">' + ICON[r.verdict] + '</td><td>' + esc(r.label) + '</td><td>"' + esc(r.claim) + '"</td><td>' + fmt(r.evidence) + '</td></tr>').join('');
+      const s = ClaimCheck.summary(results);
+      out.innerHTML = '<h4>' + esc(title) + '</h4><div class="table-wrap"><table><thead><tr><th></th><th>Claim</th><th>PR says</th><th>What the diff shows</th></tr></thead><tbody>' + rows +
+        '</tbody></table></div><div class="small">' + s.good + ' supported · ' + s.bad + ' not supported · ' + s.unclear + ' unclear</div>';
+    } catch (e) {
+      out.textContent = 'Could not read the input: ' + e.message;
+    }
+  }
+  document.getElementById('run').addEventListener('click', run);
+  run();
+</script>
+</body>
+</html>
