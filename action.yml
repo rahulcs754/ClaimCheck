@@ -43,15 +43,7 @@ runs:
   steps:
     - name: Run ClaimCheck
       shell: bash
-      receipt:
-    description: "Add a verification receipt to the PR comment (which CI tests and steps ran, what was not verified). Needs actions: read and checks: read."
-    required: false
-    default: 'true'
-  wait-for-ci:
-    description: Minutes to wait for other CI jobs to finish before writing the receipt. 0 = report what has finished so far.
-    required: false
-    default: '15'
-  working-directory: ${{ inputs.working-directory }}
+      working-directory: ${{ inputs.working-directory }}
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         CC_BASE: ${{ inputs.base }}
