@@ -1,6 +1,6 @@
 # ClaimCheck
 
-**Does the PR do what it says?** ClaimCheck is a GitHub Action that reads the PR description (often written by an AI agent), finds claims like "added tests", "no breaking changes" or "handled errors", and checks each one against the real diff. It comments only when a claim does not match.
+**Does the PR do what it says?** ClaimCheck is a GitHub Action that reads the PR description (often written by an AI agent), finds claims like "added tests", "no breaking changes" or "handled errors", and checks each one against the real diff. Then it adds a **verification receipt**: which tests and CI steps actually ran on the PR, and what nobody verified.
 
 [![CI](https://github.com/rahulcs754/claimcheck/actions/workflows/ci.yml/badge.svg)](https://github.com/rahulcs754/claimcheck/actions/workflows/ci.yml)
 · [Website](https://rahulcs754.github.io/claimcheck/)
@@ -8,7 +8,8 @@
 ## Benefits
 - **Catches false "done" claims.** Agents often say "added tests" when no test file changed. ClaimCheck shows it before a human approves.
 - **Saves reviewer time.** A reviewer sees at a glance which parts of the summary to trust and which to check.
-- **Quiet by default.** No comment when every claim matches. One comment per PR, updated on each push.
+- **Shows what was really verified.** The receipt lists the CI tests, type check, lint and build steps that ran on the head commit, and what was not verified (failed or skipped jobs, no test run, code with no test changes).
+- **One comment per PR.** Updated in place on each push or description edit.
 - **No AI, no server.** Plain rules over the git diff. Fast, free, repeatable, and no code leaves CI.
 
 ## What the PR comment looks like
@@ -38,6 +39,8 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  actions: read    # for the verification receipt
+  checks: read
 
 jobs:
   claimcheck:
@@ -51,14 +54,16 @@ jobs:
 `edited` makes it re-check when someone fixes the description.
 
 ### 2. Open a PR
-Write the description as usual (or let your agent write it). ClaimCheck posts a comment only if a claim does not match. If you later fix the code or the text, the same comment updates to ✅.
+Write the description as usual (or let your agent write it). ClaimCheck waits for your other CI jobs (up to 15 minutes), then posts one comment with the claims table and the receipt. If you later fix the code or the text, the same comment updates.
 
 ### Options
 | Input | Default | What it does |
 |---|---|---|
 | `fail-on-mismatch` | `false` | Fail the check when a claim is not supported. Use it with branch protection to block the merge. |
 | `comment` | `true` | Post or update one PR comment. |
-| `comment-on` | `mismatch` | `mismatch` = comment only when something fails. `always` = comment on every PR. |
+| `comment-on` | `mismatch` | `mismatch` = comment only when something fails. `always` = comment on every PR. With `receipt` on, every PR gets a comment. |
+| `receipt` | `true` | Add the verification receipt. Set `false` to go back to "comment only on mismatch". |
+| `wait-for-ci` | `15` | Minutes to wait for other CI jobs before writing the receipt. `0` = report what has finished so far. |
 | `base` | `origin/<base branch>` | Ref to diff against. |
 | `working-directory` | `.` | Folder to run in. |
 
@@ -69,7 +74,34 @@ The report is also written to the job summary.
 npx github:rahulcs754/claimcheck --body-file pr.md --base origin/main
 npx github:rahulcs754/claimcheck --body "Added tests. No breaking changes." --base main --json
 ```
+The receipt needs a PR run in GitHub Actions (`--receipt --wait <minutes>`), so local runs show only the claims table.
 Tip: ask your coding agent to run this before it opens a PR, so it fixes its own summary.
+
+## Verification receipt
+Under the claims table, ClaimCheck reads the CI runs of the PR's head commit and writes a receipt:
+
+> #### 🧾 Verification receipt for `3f2a9c1`
+>
+> | Check | Where | Result |
+> |---|---|---|
+> | Tests | CI / test → `Run npm test` | ✅ passed |
+> | Type check | CI / test → `Run npm run typecheck` | ✅ passed |
+> | Lint | Lint / lint → `Run npx eslint .` | ❌ failed |
+>
+> CI jobs: 1 passed · 1 failed · 1 running · 0 skipped
+>
+> **Not verified**
+> - Failed: Lint / lint (step "Run npx eslint .").
+> - Still running when ClaimCheck finished: E2E / playwright.
+> - Changed code has no test changes: `src/pay.ts`.
+
+| Part | Where it comes from |
+|---|---|
+| Which tests ran | CI steps that look like tests (`npm test`, `vitest`, `jest`, `pytest`, `go test`, `playwright` …), with pass or fail |
+| Which steps | Type check, lint and build steps from GitHub Actions jobs, plus check runs from other CI apps (Vercel, CircleCI …) |
+| What was not verified | Failed, skipped or unfinished jobs; no test step; "added tests" claimed but no test step passed; no type check or lint passed; changed code with no test changes; claims the diff does not back |
+
+It needs `actions: read` and `checks: read`. Without them the receipt says so and the claims check still runs.
 
 ## What it checks
 | Claim in the PR text | Checked against the diff |
@@ -92,6 +124,7 @@ It skips negated or future text ("did not add tests", "will add tests later"), q
 - Rule-based: it understands common phrasings, not every sentence. Unknown claims are ignored, never guessed.
 - "Errors handled" checks that error handling was added, not that it is correct.
 - Breaking-change check covers JS/TS exports only.
+- The receipt reads step names. A step called "Run script.sh" that runs tests is not counted as a test; name your steps clearly.
 
 ## Develop
 ```bash
